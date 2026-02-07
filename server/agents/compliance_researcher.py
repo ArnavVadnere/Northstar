@@ -1,191 +1,80 @@
 """
-Agent 1 — Compliance Researcher
+Agent 1: Compliance Researcher (Stub)
 
-Accepts a document type and returns structured compliance rules relevant to
-that document type. Called by Person 2's pipeline orchestrator.
+This is a stub for Person 1 to fill in.
+Looks up live SEC/FINRA regulations relevant to the document type.
 
-TODO: Replace hardcoded rules with Dedalus SDK + web search MCP to fetch
-      live 2026 SEC/FINRA regulations.
+Owner: Person 1
 """
-
-from typing import List
-
-from pydantic import BaseModel
+from typing import Optional, List
 
 
-# ---------------------------------------------------------------------------
-# Schema
-# ---------------------------------------------------------------------------
-class ComplianceRule(BaseModel):
-    rule_id: str
-    description: str
-    severity: str  # "critical", "high", "medium", "low"
-    regulation: str
-
-
-class ComplianceRulesSchema(BaseModel):
-    rules: List[ComplianceRule]
-    required_sections: List[str]
-    materiality_threshold: str
-
-
-# ---------------------------------------------------------------------------
-# Rule definitions (MVP hardcoded — replace with Dedalus agent)
-# ---------------------------------------------------------------------------
-_SOX_404_RULES = ComplianceRulesSchema(
-    rules=[
-        ComplianceRule(
-            rule_id="SOX-ITGC-1",
-            description="IT General Controls testing must be documented",
-            severity="critical",
-            regulation="SOX 404 Section A",
-        ),
-        ComplianceRule(
-            rule_id="SOX-ACCESS-1",
-            description="Access controls and segregation of duties required",
-            severity="critical",
-            regulation="SOX 404 Section B",
-        ),
-        ComplianceRule(
-            rule_id="SOX-MGMT-1",
-            description="Management letter findings must be addressed",
-            severity="high",
-            regulation="SOX 404 Management Requirements",
-        ),
-        ComplianceRule(
-            rule_id="SOX-RISK-1",
-            description="Risk assessment process must be documented with identified risks",
-            severity="high",
-            regulation="SOX 404 Risk Assessment",
-        ),
-        ComplianceRule(
-            rule_id="SOX-MONITOR-1",
-            description="Ongoing monitoring activities and deficiency tracking required",
-            severity="medium",
-            regulation="SOX 404 Monitoring",
-        ),
-    ],
-    required_sections=[
-        "IT Controls",
-        "Access Management",
-        "Change Management",
-        "Risk Assessment",
-        "Monitoring Activities",
-    ],
-    materiality_threshold="$5M for financial statement impact",
-)
-
-_10K_RULES = ComplianceRulesSchema(
-    rules=[
-        ComplianceRule(
-            rule_id="SEC-1A",
-            description="Risk factors section (Item 1A) is mandatory",
-            severity="critical",
-            regulation="SEC Regulation S-K Item 1A",
-        ),
-        ComplianceRule(
-            rule_id="SEC-7",
-            description="Management's Discussion and Analysis (MD&A) required",
-            severity="critical",
-            regulation="SEC Regulation S-K Item 7",
-        ),
-        ComplianceRule(
-            rule_id="SEC-9A",
-            description="Controls and Procedures disclosure required",
-            severity="high",
-            regulation="SEC Regulation S-K Item 9A",
-        ),
-        ComplianceRule(
-            rule_id="SEC-8",
-            description="Financial statements and supplementary data must be audited",
-            severity="critical",
-            regulation="SEC Regulation S-K Item 8",
-        ),
-        ComplianceRule(
-            rule_id="SEC-XBRL",
-            description="XBRL/iXBRL tagging required for financial statements",
-            severity="medium",
-            regulation="SEC Rule 405 of Regulation S-T",
-        ),
-    ],
-    required_sections=[
-        "Risk Factors",
-        "MD&A",
-        "Financial Statements",
-        "Controls & Procedures",
-        "Auditor's Report",
-    ],
-    materiality_threshold="5% of net income or $100K, whichever is lower",
-)
-
-_INVOICE_RULES = ComplianceRulesSchema(
-    rules=[
-        ComplianceRule(
-            rule_id="INV-MATH-1",
-            description="Line item totals must equal invoice total",
-            severity="high",
-            regulation="GAAP Invoice Standards",
-        ),
-        ComplianceRule(
-            rule_id="INV-SIG-1",
-            description="Authorized signature required for invoices >$10K",
-            severity="critical",
-            regulation="Internal Controls - Invoice Approval",
-        ),
-        ComplianceRule(
-            rule_id="INV-TAX-1",
-            description="Tax calculations must comply with jurisdiction rates",
-            severity="medium",
-            regulation="State Tax Compliance",
-        ),
-        ComplianceRule(
-            rule_id="INV-DUP-1",
-            description="Duplicate invoice numbers must be flagged",
-            severity="high",
-            regulation="Internal Controls - Duplicate Detection",
-        ),
-        ComplianceRule(
-            rule_id="INV-PO-1",
-            description="Purchase order reference required for invoices >$5K",
-            severity="medium",
-            regulation="Procurement Controls",
-        ),
-    ],
-    required_sections=["Line Items", "Totals", "Tax", "Payment Terms", "Vendor Info"],
-    materiality_threshold="$1,000 for math discrepancies",
-)
-
-_RULES_BY_TYPE = {
-    "SOX 404": _SOX_404_RULES,
-    "10-K": _10K_RULES,
-    "Invoice": _INVOICE_RULES,
-}
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-async def research_compliance_rules(document_type: str) -> ComplianceRulesSchema:
+async def research_compliance_rules(
+    document_type: str,
+    specific_topics: Optional[List[str]] = None
+) -> dict:
     """
-    Agent 1: Research current compliance regulations for the given document type.
-
-    This agent is called by Person 2's pipeline orchestrator.
-
+    Research current compliance rules for the given document type.
+    
+    Person 1: Replace this stub with real Dedalus agent that:
+    - Uses web search MCP to find current regulations
+    - Looks up SEC/FINRA rules database
+    - Returns structured compliance requirements
+    
     Args:
-        document_type: "SOX 404" | "10-K" | "Invoice"
-
+        document_type: Type of document ('SOX 404', '10-K', '8-K', 'Invoice')
+        specific_topics: Optional list of specific areas to research
+    
     Returns:
-        ComplianceRulesSchema with current 2026 regulations.
+        dict with:
+        - rules: str - Full text of applicable rules
+        - sources: list[str] - URLs of sources consulted
+        - last_updated: str - When rules were last updated
     """
-    # TODO: Implement Dedalus agent with web search MCP for live regulation lookup.
-    # For MVP, return hardcoded realistic rules.
-    result = _RULES_BY_TYPE.get(document_type)
-    if result is not None:
-        return result
-
-    # Fallback for unknown document types
-    return ComplianceRulesSchema(
-        rules=[],
-        required_sections=[],
-        materiality_threshold="Not specified",
-    )
+    # TODO: Person 1 - implement with Dedalus SDK
+    # Example implementation:
+    # 
+    # from dedalus_labs import AsyncDedalus, DedalusRunner
+    # 
+    # client = AsyncDedalus()
+    # runner = DedalusRunner(client)
+    # 
+    # result = await runner.run(
+    #     input=f"Find the current {document_type} compliance requirements...",
+    #     model="openai/gpt-4.1",
+    #     mcp_servers=["windsor/brave-search-mcp"]
+    # )
+    
+    # For now, return stub data
+    rules_map = {
+        "SOX 404": {
+            "rules": """SOX 404 requires management to assess internal controls over financial reporting.
+Key requirements include ITGC documentation, segregation of duties, and quarterly access reviews.""",
+            "sources": ["https://www.sec.gov/rules/final/33-8238.htm"],
+            "last_updated": "2026-01-01"
+        },
+        "10-K": {
+            "rules": """SEC Regulation S-K governs 10-K disclosures.
+Key requirements include risk factors (Item 105), MD&A (Item 303), and executive compensation (Item 402).""",
+            "sources": ["https://www.sec.gov/divisions/corpfin/guidance/regs-kinterp.htm"],
+            "last_updated": "2026-01-01"
+        },
+        "8-K": {
+            "rules": """SEC Form 8-K requires disclosure of material events within 4 business days.
+Triggering events include material agreements, acquisitions, and officer changes.""",
+            "sources": ["https://www.sec.gov/about/forms/form8-k.pdf"],
+            "last_updated": "2026-01-01"
+        },
+        "Invoice": {
+            "rules": """Invoice compliance requires proper documentation, tax information, and approval workflows.
+Three-way match (PO, receipt, invoice) is standard practice.""",
+            "sources": ["https://www.irs.gov/businesses/small-businesses-self-employed/keeping-records"],
+            "last_updated": "2026-01-01"
+        }
+    }
+    
+    return rules_map.get(document_type, {
+        "rules": "Standard financial compliance requirements apply.",
+        "sources": [],
+        "last_updated": "2026-01-01"
+    })
