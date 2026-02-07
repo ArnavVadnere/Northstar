@@ -208,6 +208,14 @@ DOCUMENT LOCATION:
 
 INSTRUCTION:
 Use your tools to read and analyze the document at the location above. 
+
+### DATA INTEGRITY RULE (CRITICAL) ###
+Since the document is passed via a Base64 string, you must treat the string as **IMMUTABLE BINARY DATA**.
+1. **NO TRUNCATION**: You must pass the *entire* Base64 string to the MCP tool.
+2. **NO FORMATTING**: Do not add quotes, whitespace, or markdown blocks around the string when passing it.
+3. **NO SUMMARIZATION**: Do not try to "shorten" the string.
+Failure to pass the EXACT string will result in "Incorrect padding" errors and failure of the audit.
+
 The `meanerbeaver/pdf-parse` MCP server provides several tools. Follow this ORCHESTRATION plan:
 1. **Get Bytes**: First, call `read_file_as_base64` with the provided file path. This returns a base64 string.
 2. **Call MCP Tool**: Use that base64 string to call one of the tools below. YOU MUST pass the string to the **`url_or_bytes`** argument:
@@ -259,8 +267,7 @@ Finally, in the 'raw_observations' field, please state explicitly whether you su
 
     # Check if Dedalus is configured
     if not os.getenv("DEDALUS_API_KEY"):
-        # Return mock analysis if no API key
-        return _mock_analysis(document_type)
+        return _mock_analysis(document_type, "DEDALUS_API_KEY not set")
     
     try:
         client = AsyncDedalus()
@@ -314,11 +321,13 @@ Finally, in the 'raw_observations' field, please state explicitly whether you su
         
     except Exception as e:
         print(f"[Agent 2] >>> ERROR: Dedalus analysis failed: {e}")
-        return _mock_analysis(document_type)
+        return _mock_analysis(document_type, f"Dedalus error: {str(e)}")
 
 
-def _mock_analysis(document_type: str) -> AnalysisResult:
-    """Return mock analysis when Dedalus is not available."""
+def _mock_analysis(document_type: str, reason: str = "Dedalus service unavailable") -> AnalysisResult:
+    """Return mock analysis when Dedalus is not available or fails."""
+    
+    obs = f"NOTICE: Using fallback mock data. Reason: {reason}"
     
     if document_type == "SOX 404":
         return AnalysisResult(
@@ -344,7 +353,8 @@ def _mock_analysis(document_type: str) -> AnalysisResult:
                     regulation="SOX Section 404 — COSO CC6.1",
                     locations=[GapLocation(page=1, quote="Access review frequency not specified", context="General")]
                 )
-            ]
+            ],
+            raw_observations=obs
         )
     elif document_type in ["10-K", "8-K"]:
         return AnalysisResult(
@@ -370,7 +380,8 @@ def _mock_analysis(document_type: str) -> AnalysisResult:
                     regulation="SEC Regulation S-K Item 402",
                     locations=[GapLocation(page=1, quote="Compensation metrics unclear", context="Executive Compensation")]
                 )
-            ]
+            ],
+            raw_observations=obs
         )
     else:
         return AnalysisResult(
@@ -389,5 +400,6 @@ def _mock_analysis(document_type: str) -> AnalysisResult:
                     regulation="Internal control standards",
                     locations=[GapLocation(page=1, quote="No approval signatures found", context="General")]
                 )
-            ]
+            ],
+            raw_observations=obs
         )
