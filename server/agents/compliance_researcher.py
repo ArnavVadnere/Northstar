@@ -340,7 +340,7 @@ async def research_compliance_rules(
             result = await _research_with_dedalus(document_type)
             rules_text = result.get("rules", "")
             if rules_text and len(rules_text) > 50:
-                print(f"[Agent 1] Dedalus returned {len(rules_text)} chars of live rules for {document_type}")
+                print(f"[Agent 1] >>> SUCCESS: Live research completed ({len(rules_text)} chars generated)")
                 return result
             print(f"[Agent 1] Dedalus returned insufficient rules for {document_type}, using fallback")
         except ImportError as exc:
@@ -353,6 +353,7 @@ async def research_compliance_rules(
     # Fallback to hardcoded rules
     result = _FALLBACK_RULES.get(document_type)
     if result is not None:
+        print(f"[Agent 1] >>> NOTICE: Using hardcoded FALLBACK rules for {document_type}")
         return result
 
     return {
