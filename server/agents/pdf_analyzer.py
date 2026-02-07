@@ -166,7 +166,7 @@ def read_file_as_base64(file_path: str) -> str:
     try:
         with open(file_path, "rb") as f:
             b64_str = base64.b64encode(f.read()).decode("utf-8")
-            print(f"[Local Tool] read_file_as_base64: Prepared {len(b64_str)} chars for MCP tool")
+            print(f"[Agent 2] >>> NOTICE: Base64 bridge prepared ({len(b64_str)} chars)")
             return b64_str
     except Exception as e:
         return f"Error reading local file: {str(e)}"
@@ -266,6 +266,8 @@ Finally, in the 'raw_observations' field, please state explicitly whether you su
         client = AsyncDedalus()
         runner = DedalusRunner(client)
         
+        print(f"[Agent 2] >>> SUCCESS: Starting PDF analysis orchestration...")
+        
         # Determine available MCP servers
         # We assume meanerbeaver/pdf-parse is available in the environment context
         # If it's not explicitly in mcp_servers list, the runner might not load it
@@ -280,8 +282,9 @@ Finally, in the 'raw_observations' field, please state explicitly whether you su
             mcp_servers=["meanerbeaver/pdf-parse"]
         )
         
-        # DEBUG: Print result structure to see tool usage
-        print(f"[Dedalus] Final Output: {result.final_output}")
+        print(f"[Agent 2] >>> SUCCESS: Analysis completed using Dedalus")
+        
+        # DEBUG: Log execution steps if needed
         if hasattr(result, 'steps'):
             print(f"[Dedalus] Execution Steps ({len(result.steps)}):")
             for i, step in enumerate(result.steps):
@@ -310,7 +313,7 @@ Finally, in the 'raw_observations' field, please state explicitly whether you su
         return _mock_analysis(document_type)
         
     except Exception as e:
-        print(f"Dedalus analysis failed: {e}")
+        print(f"[Agent 2] >>> ERROR: Dedalus analysis failed: {e}")
         return _mock_analysis(document_type)
 
 
