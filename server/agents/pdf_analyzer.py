@@ -165,7 +165,9 @@ def read_file_as_base64(file_path: str) -> str:
     """
     try:
         with open(file_path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
+            b64_str = base64.b64encode(f.read()).decode("utf-8")
+            print(f"[Local Tool] read_file_as_base64: Prepared {len(b64_str)} chars for MCP tool")
+            return b64_str
     except Exception as e:
         return f"Error reading local file: {str(e)}"
 
@@ -206,11 +208,14 @@ DOCUMENT LOCATION:
 
 INSTRUCTION:
 Use your tools to read and analyze the document at the location above. 
-Since the `pdf_to_text` MCP tool is cloud-hosted and requires a URL or bytes, follow this ORCHESTRATION plan:
-1. First, call `read_file_as_base64` with the provided file path to get the document content.
-2. Then, call the `pdf_to_text` MCP tool passing the base64 string you just obtained to the `url_or_bytes` argument.
-3. If the tool works, base your analysis primarily on its output.
-4. If the tools fail, fall back to the pre-extracted text provided below.
+The `meanerbeaver/pdf-parse` MCP server provides several tools. Follow this ORCHESTRATION plan:
+1. **Get Bytes**: First, call `read_file_as_base64` with the provided file path. This returns a base64 string.
+2. **Call MCP Tool**: Use that base64 string to call one of the tools below. YOU MUST pass the string to the **`url_or_bytes`** argument:
+   - `pdf_to_text`: Recommended for general reading.
+   - `extract_sections`: Best for structured filings to see headers/hierarchy.
+   - `extract_tables`: Use if you need to audit numerical data in tables.
+3. **Analyze**: Base your analysis on the tool's output.
+4. **Fallback**: Only if the tools fail or return an error, use the pre-extracted text provided below.
 
 COMPLIANCE RULES TO CHECK AGAINST:
 {rules}
