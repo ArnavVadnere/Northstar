@@ -2,6 +2,16 @@ import discord
 from datetime import datetime
 from typing import List
 
+EMBED_FIELD_LIMIT = 1024  # Discord's max for embed field values
+
+
+def _truncate(text: str, limit: int = EMBED_FIELD_LIMIT) -> str:
+    """Truncate text to fit within Discord's embed field limit."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
 # Grade → embed colour mapping
 GRADE_COLORS = {
     "A": 0x00FF00,  # Green
@@ -50,18 +60,14 @@ def build_audit_result_embed(audit_data: dict) -> discord.Embed:
         inline=True,
     )
 
-    # Top 3 gaps
+    # Top 3 gaps — each as its own field to avoid the 1024 char limit
     gaps = audit_data.get("gaps", [])[:3]
-    if gaps:
-        gap_lines = []
-        for gap in gaps:
-            emoji = SEVERITY_EMOJI.get(gap["severity"], "\u26aa")
-            gap_lines.append(
-                f"{emoji} **{gap['title']}**\n{gap['description']}\n*{gap['regulation']}*"
-            )
+    for gap in gaps:
+        emoji = SEVERITY_EMOJI.get(gap["severity"], "\u26aa")
+        field_value = f"{gap['description']}\n*{gap['regulation']}*"
         embed.add_field(
-            name="Compliance Gaps",
-            value="\n\n".join(gap_lines),
+            name=f"{emoji} {gap['title']}",
+            value=_truncate(field_value),
             inline=False,
         )
 
@@ -107,18 +113,14 @@ def build_detail_embed(audit_data: dict) -> discord.Embed:
         inline=True,
     )
 
-    # All gaps
+    # All gaps — each as its own field
     gaps = audit_data.get("gaps", [])
-    if gaps:
-        gap_lines = []
-        for gap in gaps:
-            emoji = SEVERITY_EMOJI.get(gap["severity"], "\u26aa")
-            gap_lines.append(
-                f"{emoji} **{gap['title']}**\n{gap['description']}\n*{gap['regulation']}*"
-            )
+    for gap in gaps:
+        emoji = SEVERITY_EMOJI.get(gap["severity"], "\u26aa")
+        field_value = f"{gap['description']}\n*{gap['regulation']}*"
         embed.add_field(
-            name=f"Compliance Gaps ({len(gaps)})",
-            value="\n\n".join(gap_lines),
+            name=f"{emoji} {gap['title']}",
+            value=_truncate(field_value),
             inline=False,
         )
 
@@ -128,7 +130,7 @@ def build_detail_embed(audit_data: dict) -> discord.Embed:
         steps = "\n".join(f"**{i+1}.** {step}" for i, step in enumerate(remediation))
         embed.add_field(
             name="Remediation Steps",
-            value=steps,
+            value=_truncate(steps),
             inline=False,
         )
 
