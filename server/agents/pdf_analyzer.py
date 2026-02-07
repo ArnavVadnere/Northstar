@@ -230,7 +230,7 @@ Identify 2-4 gaps that are genuinely present based on the document content."""
         
         result = await runner.run(
             input=prompt,
-            model="anthropic/claude-sonnet-4-20250514",
+            model="openai/gpt-4o",
             response_format=AnalysisResult,
             max_steps=3
         )
