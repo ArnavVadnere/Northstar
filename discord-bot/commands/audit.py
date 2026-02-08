@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import discord
@@ -80,7 +81,7 @@ async def setup(bot: discord.ext.commands.Bot):
                 filename=file.filename,
                 document_type=document_type,
             )
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             await interaction.edit_original_response(
                 embed=build_error_embed(
                     "Audit is taking longer than expected. "
