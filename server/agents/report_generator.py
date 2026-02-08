@@ -98,7 +98,8 @@ async def generate_report(
     
     executive_summary += f"The overall compliance score is {score}/100 (Grade: {grade}). "
     executive_summary += "Immediate remediation is recommended for critical findings. "
-    executive_summary += "A follow-up review should be scheduled after remediation actions are completed."
+    executive_summary += "A follow-up review should be scheduled after remediation actions are completed. "
+    executive_summary += "Key risk areas should be incorporated into the organization's ongoing compliance monitoring program."
     
     # Generate PDF report path (stub - actual PDF generation would happen here)
     report_filename = f"report_{audit_id}.pdf"

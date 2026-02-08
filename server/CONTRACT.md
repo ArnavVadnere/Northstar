@@ -48,45 +48,19 @@ Runs a compliance audit on an uploaded PDF document.
       "severity": "critical",
       "title": "Missing ITGC Documentation",
       "description": "No evidence of IT General Controls documentation for financial reporting systems.",
-      "regulation": "SOX Section 404(a) — COSO Framework CC5.1",
-      "locations": [
-        {
-          "page": 3,
-          "quote": "The company maintains financial reporting systems managed by the IT department",
-          "context": "Section 2.1 - Internal Controls Overview"
-        }
-      ]
+      "regulation": "SOX Section 404(a) — COSO Framework CC5.1"
     },
     {
       "severity": "high",
       "title": "Inadequate Segregation of Duties",
       "description": "Same personnel responsible for transaction initiation and approval.",
-      "regulation": "SOX Section 404(b) — PCAOB AS 2201.22",
-      "locations": [
-        {
-          "page": 5,
-          "quote": "Transaction processing is handled by the accounting team",
-          "context": "Section 3.2 - Transaction Controls"
-        },
-        {
-          "page": 7,
-          "quote": "Approvals are conducted by department managers",
-          "context": "Section 4.1 - Approval Workflow"
-        }
-      ]
+      "regulation": "SOX Section 404(b) — PCAOB AS 2201.22"
     },
     {
       "severity": "medium",
       "title": "No Quarterly Access Review",
       "description": "Access logs for financial systems not reviewed on a quarterly basis.",
-      "regulation": "SOX Section 404 — COSO CC6.1",
-      "locations": [
-        {
-          "page": 8,
-          "quote": "System access is reviewed on an annual basis",
-          "context": "Section 5.1 - Access Management"
-        }
-      ]
+      "regulation": "SOX Section 404 — COSO CC6.1"
     }
   ],
   "remediation": [
@@ -96,7 +70,7 @@ Runs a compliance audit on an uploaded PDF document.
     "Deploy automated monitoring for privileged account usage.",
     "Conduct a full internal control gap assessment before next reporting period."
   ],
-  "executive_summary": "The audit identified three compliance gaps in the uploaded SOX 404 document. A critical deficiency was found in ITGC documentation, with additional high-severity issues in segregation of duties and medium-severity gaps in access review procedures. Immediate remediation is recommended for the critical finding. Overall compliance posture requires significant improvement before the next reporting cycle.",
+  "executive_summary": "The audit identified three compliance gaps in the uploaded SOX 404 document. A critical deficiency was found in ITGC documentation, with additional high-severity issues in segregation of duties and medium-severity gaps in access review procedures. Immediate remediation is recommended for the critical finding. Overall compliance posture requires significant improvement before the next reporting cycle. Key risk areas should be incorporated into the organization's ongoing compliance monitoring program.",
   "report_pdf_url": "/api/files/report_aud_abc123.pdf"
 }
 ```
@@ -111,15 +85,11 @@ Runs a compliance audit on an uploaded PDF document.
 | `document_name` | string | Original filename of uploaded PDF |
 | `document_type` | string | Document type as submitted |
 | `timestamp` | string | ISO 8601 timestamp |
-| `gaps` | array | List of compliance gaps found |
+| `gaps` | array | 1-5 compliance gaps found (count varies by document quality) |
 | `gaps[].severity` | string | One of: `"critical"`, `"high"`, `"medium"` |
 | `gaps[].title` | string | Short title of the gap |
 | `gaps[].description` | string | Detailed description |
 | `gaps[].regulation` | string | Specific regulation reference |
-| `gaps[].locations` | array | Where in the PDF this gap was identified (for highlighting) |
-| `gaps[].locations[].page` | integer | Page number (1-indexed) |
-| `gaps[].locations[].quote` | string | Exact text snippet from the document |
-| `gaps[].locations[].context` | string | Section/heading where found |
 | `remediation` | array | List of 5 remediation steps (strings) |
 | `executive_summary` | string | 5-sentence C-suite summary |
 | `report_pdf_url` | string | Relative URL to download generated PDF report |

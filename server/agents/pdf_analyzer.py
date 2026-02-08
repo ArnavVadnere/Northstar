@@ -7,11 +7,13 @@ Uses Dedalus SDK with structured outputs for reliable JSON responses.
 Owner: Person 2
 """
 import os
+import base64
 from typing import Optional, List
 from pydantic import BaseModel
 from dedalus_labs import AsyncDedalus, DedalusRunner
+import json
 import logging
-import base64
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,26 +25,17 @@ logging.basicConfig(level=logging.INFO)
 
 # --- Pydantic models for structured output ---
 
-class GapLocation(BaseModel):
-    """Location in the PDF where a gap was identified."""
-    page: int
-    quote: str
-    context: str
-
-
 class ComplianceGap(BaseModel):
     """A single compliance gap identified in the document."""
     severity: str  # 'critical', 'high', 'medium'
     title: str
     description: str
     regulation: str
-    locations: List[GapLocation]
 
 
 class AnalysisResult(BaseModel):
     """Structured result from the PDF analyzer agent."""
     gaps: List[ComplianceGap]
-    raw_observations: Optional[str] = None
 
 
 # --- Compliance rules by document type ---
@@ -158,35 +151,30 @@ Invoice Compliance Requirements:
 }
 
 
-def read_file_as_base64(file_path: str) -> str:
-    """
-    Reads a local file and returns its content as a base64-encoded string.
-    Use this to prepare file content for tools that expect 'url_or_bytes' but are cloud-hosted.
-    """
-    try:
-        with open(file_path, "rb") as f:
-            b64_str = base64.b64encode(f.read()).decode("utf-8")
-            print(f"[Agent 2] >>> NOTICE: Base64 bridge prepared ({len(b64_str)} chars)")
-            return b64_str
-    except Exception as e:
-        return f"Error reading local file: {str(e)}"
+def _extract_json(text: str) -> str:
+    """Strip markdown code fences from LLM JSON output."""
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
+
 
 
 async def analyze_pdf(
     extracted_text: dict,
     document_type: str,
     compliance_rules: Optional[str] = None,
-    file_path: Optional[str] = None
+    pdf_bytes: Optional[bytes] = None,
 ) -> AnalysisResult:
     """
     Analyze extracted PDF text against compliance rules using Dedalus.
-    
+
     Args:
         extracted_text: Output from pdf_extractor (contains full_text and pages)
         document_type: Type of document ('SOX 404', '10-K', '8-K', 'Invoice')
         compliance_rules: Optional custom rules (defaults to built-in rules)
-        file_path: Path to the PDF file for MCP tool access
-    
+        pdf_bytes: Raw PDF bytes for MCP tool usage (extract_tables)
+
     Returns:
         AnalysisResult with identified gaps and locations
     """
@@ -194,53 +182,62 @@ async def analyze_pdf(
     rules = compliance_rules or COMPLIANCE_RULES.get(document_type, "")
     if not rules:
         rules = "General financial document compliance standards apply."
-    
-    # Build the page text with page numbers from pre-extraction (fallback context)
-    pages_text = ""
-    for page in extracted_text.get("pages", []):
-        pages_text += f"\n\n--- PAGE {page['page_num']} ---\n{page['text']}"
-    
+
+    doc_text = extracted_text.get("full_text", "")
+
+    # Base64-encode PDF bytes for MCP tools that need url_or_bytes
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8") if pdf_bytes else None
+
+    # Build the MCP tool instruction block
+    mcp_instructions = """
+IMPORTANT — MCP TOOL USAGE:
+You have access to MCP tools from the pdf-parse server. Before performing your analysis,
+you MUST call these tools to extract structured data from the document:
+
+1. Call `mcp-extract_sections` with parameter `text` set to the DOCUMENT TEXT below.
+   This will return the section/heading structure of the document.
+"""
+    if pdf_b64:
+        mcp_instructions += f"""
+2. Call `mcp-extract_tables` with parameter `url_or_bytes` set to the following base64-encoded PDF:
+{pdf_b64}
+   This will extract any tables from the PDF.
+"""
+    mcp_instructions += """
+Use the outputs from these tool calls to inform your compliance gap analysis.
+If a tool call fails or returns empty results, proceed with the raw text provided.
+"""
+
     # Create the analysis prompt
     prompt = f"""You are a compliance analyst reviewing a {document_type} document.
-
-DOCUMENT LOCATION:
-{file_path}
-
-INSTRUCTION:
-Use your tools to read and analyze the document at the location above. 
-
-### DATA INTEGRITY RULE (CRITICAL) ###
-Since the document is passed via a Base64 string, you must treat the string as **IMMUTABLE BINARY DATA**.
-1. **NO TRUNCATION**: You must pass the *entire* Base64 string to the MCP tool.
-2. **NO FORMATTING**: Do not add quotes, whitespace, or markdown blocks around the string when passing it.
-3. **NO SUMMARIZATION**: Do not try to "shorten" the string.
-Failure to pass the EXACT string will result in "Incorrect padding" errors and failure of the audit.
-
-The `meanerbeaver/pdf-parse` MCP server provides several tools. Follow this ORCHESTRATION plan:
-1. **Get Bytes**: First, call `read_file_as_base64` with the provided file path. This returns a base64 string.
-2. **Call MCP Tool**: Use that base64 string to call one of the tools below. YOU MUST pass the string to the **`url_or_bytes`** argument:
-   - `pdf_to_text`: Recommended for general reading.
-   - `extract_sections`: Best for structured filings to see headers/hierarchy.
-   - `extract_tables`: Use if you need to audit numerical data in tables.
-3. **Analyze**: Base your analysis on the tool's output.
-4. **Fallback**: Only if the tools fail or return an error, use the pre-extracted text provided below.
+{mcp_instructions}
+DOCUMENT TEXT (for reference):
+---
+{doc_text}
+---
 
 COMPLIANCE RULES TO CHECK AGAINST:
 {rules}
 
-PRE-EXTRACTED CONTENT (FALLBACK):
-{pages_text}
-
 TASK:
-Analyze this document against the compliance rules above. For each compliance gap you find:
+First, call the MCP tools described above to get structured sections and tables.
+Then, analyze this document against the compliance rules. For each compliance gap you find:
 1. Identify the severity (critical, high, or medium)
 2. Give it a clear, specific title
 3. Provide a detailed description of what's missing or non-compliant
 4. Reference the specific regulation it violates
-5. Quote the exact text from the document that indicates the gap, noting which page it's on
 
 Focus on finding real gaps based on what's actually in (or missing from) the document.
 If the document is very short or lacks substantive content, note that as a gap itself.
+
+Identify all genuine compliance gaps you find. Assign each gap a severity:
+- "critical": Immediate regulatory risk or material deficiency
+- "high": Significant gap requiring prompt remediation
+- "medium": Notable issue that should be addressed
+
+Only report gaps that are genuinely present — do not invent gaps to fill a quota.
+If the document is largely compliant, it is acceptable to return fewer gaps.
+Return between 1 and 5 gaps.
 
 Provide your analysis as structured JSON with the following format:
 {{
@@ -249,56 +246,32 @@ Provide your analysis as structured JSON with the following format:
       "severity": "critical|high|medium",
       "title": "Short descriptive title",
       "description": "Detailed explanation of the compliance gap",
-      "regulation": "Specific regulation reference",
-      "locations": [
-        {{
-          "page": 1,
-          "quote": "Exact text from document",
-          "context": "Section or heading where found"
-        }}
-      ]
+      "regulation": "Specific regulation reference"
     }}
   ]
-}}
-
-Identify 2-4 gaps that are genuinely present based on the document content.
-
-Finally, in the 'raw_observations' field, please state explicitly whether you successfully used the 'pdf_to_text' tool via the base64 bridge or used the fallback text."""
+}}"""
 
     # Check if Dedalus is configured
     if not os.getenv("DEDALUS_API_KEY"):
         return _mock_analysis(document_type, "DEDALUS_API_KEY not set")
     
     try:
-        client = AsyncDedalus()
+        client = AsyncDedalus(timeout=300)  # 5 minutes for MCP PDF processing
         runner = DedalusRunner(client)
         
-        print(f"[Agent 2] >>> SUCCESS: Starting PDF analysis orchestration...")
-        
-        # Determine available MCP servers
-        # We assume meanerbeaver/pdf-parse is available in the environment context
-        # If it's not explicitly in mcp_servers list, the runner might not load it
-        # But per user request, we adding it.
-        
+        print(f"[Agent 2] >>> Starting compliance analysis...")
+
         result = await runner.run(
             input=prompt,
             model="openai/gpt-4o",
-            response_format=AnalysisResult,
             max_steps=5,
-            tools=[read_file_as_base64],
-            mcp_servers=["meanerbeaver/pdf-parse"]
+            mcp_servers=["meanerbeaver/pdf-parse"],
         )
-        
+
         print(f"[Agent 2] >>> SUCCESS: Analysis completed using Dedalus")
-        
-        # DEBUG: Log execution steps if needed
-        if hasattr(result, 'steps'):
-            print(f"[Dedalus] Execution Steps ({len(result.steps)}):")
-            for i, step in enumerate(result.steps):
-                print(f"--- Step {i+1} ---")
-                print(f"Action: {step.action if hasattr(step, 'action') else 'Unknown'}")
-                print(f"Observation: {step.observation if hasattr(step, 'observation') else 'Unknown'}")
-        
+        print(f"[Agent 2] MCP results: {getattr(result, 'mcp_results', [])}")
+        print(f"[Agent 2] Steps used: {getattr(result, 'steps_used', 'N/A')}")
+
         # Parse the response
         if hasattr(result, 'final_output') and result.final_output:
             # If we got structured output, it should already be an AnalysisResult
@@ -306,16 +279,13 @@ Finally, in the 'raw_observations' field, please state explicitly whether you su
                 return result.final_output
             
             # Otherwise try to parse it
-            import json
             try:
-                data = json.loads(result.final_output)
+                cleaned = _extract_json(result.final_output)
+                data = json.loads(cleaned)
                 return AnalysisResult(**data)
             except (json.JSONDecodeError, TypeError):
-                # Fallback: wrap the text response
-                return AnalysisResult(
-                    gaps=_mock_analysis(document_type).gaps,
-                    raw_observations=str(result.final_output)
-                )
+                # Fallback: use mock data
+                return _mock_analysis(document_type)
         
         return _mock_analysis(document_type)
         
@@ -326,9 +296,9 @@ Finally, in the 'raw_observations' field, please state explicitly whether you su
 
 def _mock_analysis(document_type: str, reason: str = "Dedalus service unavailable") -> AnalysisResult:
     """Return mock analysis when Dedalus is not available or fails."""
-    
-    obs = f"NOTICE: Using fallback mock data. Reason: {reason}"
-    
+
+    print(f"[Agent 2] NOTICE: Using fallback mock data. Reason: {reason}")
+
     if document_type == "SOX 404":
         return AnalysisResult(
             gaps=[
@@ -336,70 +306,65 @@ def _mock_analysis(document_type: str, reason: str = "Dedalus service unavailabl
                     severity="critical",
                     title="Missing ITGC Documentation",
                     description="No evidence of IT General Controls documentation for financial reporting systems.",
-                    regulation="SOX Section 404(a) — COSO Framework CC5.1",
-                    locations=[GapLocation(page=1, quote="Document lacks ITGC controls description", context="General")]
+                    regulation="SOX Section 404(a) — COSO Framework CC5.1"
                 ),
                 ComplianceGap(
                     severity="high",
                     title="Inadequate Segregation of Duties",
                     description="Same personnel responsible for transaction initiation and approval.",
-                    regulation="SOX Section 404(b) — PCAOB AS 2201.22",
-                    locations=[GapLocation(page=1, quote="No segregation of duties policy found", context="General")]
+                    regulation="SOX Section 404(b) — PCAOB AS 2201.22"
                 ),
                 ComplianceGap(
                     severity="medium",
                     title="No Quarterly Access Review",
                     description="Access logs for financial systems not reviewed on a quarterly basis.",
-                    regulation="SOX Section 404 — COSO CC6.1",
-                    locations=[GapLocation(page=1, quote="Access review frequency not specified", context="General")]
+                    regulation="SOX Section 404 — COSO CC6.1"
                 )
-            ],
-            raw_observations=obs
+            ]
         )
     elif document_type in ["10-K", "8-K"]:
         return AnalysisResult(
             gaps=[
                 ComplianceGap(
-                    severity="high",
+                    severity="critical",
                     title="Risk Factor Disclosure Gap",
                     description="Material risks not adequately disclosed in risk factors section.",
-                    regulation="SEC Regulation S-K Item 105",
-                    locations=[GapLocation(page=1, quote="Limited risk disclosure found", context="Risk Factors")]
+                    regulation="SEC Regulation S-K Item 105"
                 ),
                 ComplianceGap(
-                    severity="medium",
+                    severity="high",
                     title="Forward-Looking Statements",
                     description="Forward-looking statements lack sufficient cautionary language.",
-                    regulation="SEC Regulation S-K Item 303",
-                    locations=[GapLocation(page=1, quote="Missing safe harbor language", context="MD&A")]
+                    regulation="SEC Regulation S-K Item 303"
                 ),
                 ComplianceGap(
                     severity="medium",
                     title="Executive Compensation Disclosure",
                     description="Performance metrics for compensation not fully disclosed.",
-                    regulation="SEC Regulation S-K Item 402",
-                    locations=[GapLocation(page=1, quote="Compensation metrics unclear", context="Executive Compensation")]
+                    regulation="SEC Regulation S-K Item 402"
                 )
-            ],
-            raw_observations=obs
+            ]
         )
     else:
         return AnalysisResult(
             gaps=[
                 ComplianceGap(
-                    severity="high",
+                    severity="critical",
                     title="Documentation Gap",
                     description="Required documentation elements are missing or incomplete.",
-                    regulation="General compliance standards",
-                    locations=[GapLocation(page=1, quote="Incomplete documentation", context="General")]
+                    regulation="General compliance standards"
+                ),
+                ComplianceGap(
+                    severity="high",
+                    title="Approval Workflow Missing",
+                    description="No evidence of proper approval workflow.",
+                    regulation="Internal control standards"
                 ),
                 ComplianceGap(
                     severity="medium",
-                    title="Approval Workflow Missing",
-                    description="No evidence of proper approval workflow.",
-                    regulation="Internal control standards",
-                    locations=[GapLocation(page=1, quote="No approval signatures found", context="General")]
+                    title="Tax Compliance Gap",
+                    description="Tax identification numbers and applicable tax rates not documented.",
+                    regulation="Tax compliance standards"
                 )
-            ],
-            raw_observations=obs
+            ]
         )

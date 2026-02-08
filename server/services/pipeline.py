@@ -12,13 +12,12 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime, timezone
 import uuid
-import os
-import aiofiles
 
 from services.pdf_extractor import extract_text_from_pdf, PDFExtractionError
 from agents.compliance_researcher import research_compliance_rules
 from agents.pdf_analyzer import analyze_pdf, AnalysisResult
 from agents.report_generator import generate_report
+from agents.document_classifier import classify_document
 
 
 # Directory for generated reports
@@ -51,41 +50,39 @@ async def run_audit_pipeline(
     
     # Ensure reports directory exists
     REPORTS_DIR.mkdir(exist_ok=True)
-    
-    # Save to REPORTS_DIR so it can be served/accessed
-    temp_filename = f"temp_source_{audit_id}.pdf"
-    temp_file_path = REPORTS_DIR / temp_filename
-    
-    try:
-        # Save to file for local tool access
-        async with aiofiles.open(temp_file_path, "wb") as f:
-            await f.write(pdf_content)
 
-        # Step 1: Extract text from PDF (Keep existing extraction for fallback/context)
-        try:
-            extracted = extract_text_from_pdf(pdf_content)
-            print(f"[Pipeline] Extracted {extracted['page_count']} pages, {len(extracted['full_text'])} characters")
-        except PDFExtractionError as e:
-            raise ValueError(f"PDF extraction failed: {e}")
-        
-        # Step 2: Research compliance rules (Agent 1 - Person 1's agent)
-        print(f"[Pipeline] Researching {document_type} compliance rules...")
-        compliance_research = await research_compliance_rules(document_type)
-        rules_text = compliance_research.get("rules", "")
-        print(f"[Pipeline] Got {len(rules_text)} chars of compliance rules")
-        
-        # Step 3: Analyze PDF against rules (Agent 2 - your agent)
-        print(f"[Pipeline] Analyzing document using local bridge -> MCP: {temp_file_path}")
-        analysis: AnalysisResult = await analyze_pdf(
-            extracted_text=extracted,
-            document_type=document_type,
-            compliance_rules=rules_text,
-            file_path=str(temp_file_path.absolute())
-        )
-    finally:
-        # Cleanup temp file
-        if temp_file_path.exists():
-            os.remove(temp_file_path)
+    # Step 1: Extract text from PDF (needed by all agents)
+    try:
+        extracted = extract_text_from_pdf(pdf_content)
+        print(f"[Pipeline] Extracted {extracted['page_count']} pages, {len(extracted['full_text'])} characters")
+    except PDFExtractionError as e:
+        raise ValueError(f"PDF extraction failed: {e}")
+
+    print(f"[Pipeline] >>> DEBUG: Running Gatekeeper for {document_type} audit")
+
+    # Step 0: Document Gatekeeper (Pre-validation)
+    validation = await classify_document(
+        extracted_text=extracted,
+        expected_type=document_type
+    )
+    print(f"[Pipeline] Gatekeeper result: financial={validation.is_financial_document}, detected={validation.detected_type}")
+    if not validation.is_financial_document:
+        raise ValueError(f"Invalid document: {validation.reason}")
+
+    # Step 2: Research compliance rules (Agent 1 - Person 1's agent)
+    print(f"[Pipeline] Researching {document_type} compliance rules...")
+    compliance_research = await research_compliance_rules(document_type)
+    rules_text = compliance_research.get("rules", "")
+    print(f"[Pipeline] Got {len(rules_text)} chars of compliance rules")
+
+    # Step 3: Analyze PDF against rules (Agent 2 - your agent)
+    print(f"[Pipeline] Analyzing document against compliance rules...")
+    analysis: AnalysisResult = await analyze_pdf(
+        extracted_text=extracted,
+        document_type=document_type,
+        compliance_rules=rules_text,
+        pdf_bytes=pdf_content,
+    )
     
     # Convert Pydantic models to dicts for Agent 3
     gaps_dict = [
@@ -94,10 +91,6 @@ async def run_audit_pipeline(
             "title": gap.title,
             "description": gap.description,
             "regulation": gap.regulation,
-            "locations": [
-                {"page": loc.page, "quote": loc.quote, "context": loc.context}
-                for loc in gap.locations
-            ]
         }
         for gap in analysis.gaps
     ]
@@ -126,8 +119,7 @@ async def run_audit_pipeline(
         "gaps": gaps_dict,
         "remediation": report["remediation"],
         "executive_summary": report["executive_summary"],
-        "report_pdf_url": f"/api/files/report_{audit_id}.pdf",
-        "raw_observations": analysis.raw_observations
+        "report_pdf_url": f"/api/files/report_{audit_id}.pdf"
     }
     
     print(f"[Pipeline] Audit {audit_id} complete. Score: {report['score']}, Grade: {report['grade']}")
