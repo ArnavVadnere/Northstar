@@ -5,7 +5,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-AUDIT_TIMEOUT = 120  # seconds — audits can take up to 2 minutes
+AUDIT_TIMEOUT = 600  # seconds — audits with MCP tools can take several minutes
 
 
 class FastAPIClient:

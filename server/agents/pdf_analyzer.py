@@ -188,24 +188,50 @@ async def analyze_pdf(
     # Base64-encode PDF bytes for MCP tools that need url_or_bytes
     pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8") if pdf_bytes else None
 
-    # Build the MCP tool instruction block
-    mcp_instructions = """
-IMPORTANT — MCP TOOL USAGE:
-You have access to MCP tools from the pdf-parse server. Before performing your analysis,
-you MUST call these tools to extract structured data from the document:
+    # Select relevant MCP tools per document type to minimize tool calls
+    TOOLS_BY_DOCTYPE = {
+        "SOX 404": [
+            ("find_regulatory_sections", f"pdf_path={{PDF_B64}}, doc_type='{document_type}'"),
+            ("detect_compliance_red_flags", "pdf_path={PDF_B64}"),
+            ("check_required_signatures", "pdf_path={PDF_B64}"),
+        ],
+        "10-K": [
+            ("find_regulatory_sections", f"pdf_path={{PDF_B64}}, doc_type='{document_type}'"),
+            ("extract_financial_statements", "pdf_path={PDF_B64}"),
+            ("detect_compliance_red_flags", "pdf_path={PDF_B64}"),
+        ],
+        "8-K": [
+            ("find_regulatory_sections", f"pdf_path={{PDF_B64}}, doc_type='{document_type}'"),
+            ("detect_compliance_red_flags", "pdf_path={PDF_B64}"),
+        ],
+        "Invoice": [
+            ("validate_financial_math", "pdf_path={PDF_B64}"),
+            ("check_required_signatures", "pdf_path={PDF_B64}"),
+        ],
+    }
+    selected_tools = TOOLS_BY_DOCTYPE.get(document_type, [
+        ("find_regulatory_sections", f"pdf_path={{PDF_B64}}, doc_type='{document_type}'"),
+        ("detect_compliance_red_flags", "pdf_path={PDF_B64}"),
+    ])
 
-1. Call `mcp-extract_sections` with parameter `text` set to the DOCUMENT TEXT below.
-   This will return the section/heading structure of the document.
+    # Build the MCP tool instruction block
+    tool_lines = "\n".join(
+        f"{i+1}. Call `{name}` with {args}"
+        for i, (name, args) in enumerate(selected_tools)
+    )
+    mcp_instructions = f"""
+IMPORTANT — MCP TOOL USAGE:
+You have access to MCP tools from the legal-doc-mcp server. Call these tools in order:
+
+{tool_lines}
+
+Use the outputs from these tool calls to inform your compliance gap analysis.
+If a tool call fails or returns empty results, proceed with the raw text provided.
 """
     if pdf_b64:
         mcp_instructions += f"""
-2. Call `mcp-extract_tables` with parameter `url_or_bytes` set to the following base64-encoded PDF:
+Where {{PDF_B64}} appears above, use this exact base64 string as the pdf_path value:
 {pdf_b64}
-   This will extract any tables from the PDF.
-"""
-    mcp_instructions += """
-Use the outputs from these tool calls to inform your compliance gap analysis.
-If a tool call fails or returns empty results, proceed with the raw text provided.
 """
 
     # Create the analysis prompt
@@ -220,7 +246,7 @@ COMPLIANCE RULES TO CHECK AGAINST:
 {rules}
 
 TASK:
-First, call the MCP tools described above to get structured sections and tables.
+First, call the MCP tools listed above (in order).
 Then, analyze this document against the compliance rules. For each compliance gap you find:
 1. Identify the severity (critical, high, or medium)
 2. Give it a clear, specific title
@@ -264,8 +290,8 @@ Provide your analysis as structured JSON with the following format:
         result = await runner.run(
             input=prompt,
             model="openai/gpt-4o",
-            max_steps=5,
-            mcp_servers=["meanerbeaver/pdf-parse"],
+            max_steps=len(selected_tools) + 2,
+            mcp_servers=["sdas04/legal-doc-mcp"],
         )
 
         print(f"[Agent 2] >>> SUCCESS: Analysis completed using Dedalus")
