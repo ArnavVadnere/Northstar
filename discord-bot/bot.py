@@ -28,8 +28,9 @@ logger = logging.getLogger("northstar-bot")
 # Bot setup
 # ---------------------------------------------------------------------------
 intents = discord.Intents.default()
-intents.message_content = True
 intents.guilds = True
+# Enable message_content only if you've toggled it on in the Developer Portal:
+# intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 

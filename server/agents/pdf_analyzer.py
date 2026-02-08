@@ -10,9 +10,15 @@ import os
 from typing import Optional, List
 from pydantic import BaseModel
 from dedalus_labs import AsyncDedalus, DedalusRunner
+import logging
+import base64
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Enable verbose logging for Dedalus/LangChain
+logging.basicConfig(level=logging.INFO)
+# logging.getLogger("dedalus_labs").setLevel(logging.DEBUG)  # Use DEBUG for more detail
 
 
 # --- Pydantic models for structured output ---
@@ -152,10 +158,25 @@ Invoice Compliance Requirements:
 }
 
 
+def read_file_as_base64(file_path: str) -> str:
+    """
+    Reads a local file and returns its content as a base64-encoded string.
+    Use this to prepare file content for tools that expect 'url_or_bytes' but are cloud-hosted.
+    """
+    try:
+        with open(file_path, "rb") as f:
+            b64_str = base64.b64encode(f.read()).decode("utf-8")
+            print(f"[Agent 2] >>> NOTICE: Base64 bridge prepared ({len(b64_str)} chars)")
+            return b64_str
+    except Exception as e:
+        return f"Error reading local file: {str(e)}"
+
+
 async def analyze_pdf(
     extracted_text: dict,
     document_type: str,
-    compliance_rules: Optional[str] = None
+    compliance_rules: Optional[str] = None,
+    file_path: Optional[str] = None
 ) -> AnalysisResult:
     """
     Analyze extracted PDF text against compliance rules using Dedalus.
@@ -164,6 +185,7 @@ async def analyze_pdf(
         extracted_text: Output from pdf_extractor (contains full_text and pages)
         document_type: Type of document ('SOX 404', '10-K', '8-K', 'Invoice')
         compliance_rules: Optional custom rules (defaults to built-in rules)
+        file_path: Path to the PDF file for MCP tool access
     
     Returns:
         AnalysisResult with identified gaps and locations
@@ -173,7 +195,7 @@ async def analyze_pdf(
     if not rules:
         rules = "General financial document compliance standards apply."
     
-    # Build the page text with page numbers for location reference
+    # Build the page text with page numbers from pre-extraction (fallback context)
     pages_text = ""
     for page in extracted_text.get("pages", []):
         pages_text += f"\n\n--- PAGE {page['page_num']} ---\n{page['text']}"
@@ -181,10 +203,32 @@ async def analyze_pdf(
     # Create the analysis prompt
     prompt = f"""You are a compliance analyst reviewing a {document_type} document.
 
+DOCUMENT LOCATION:
+{file_path}
+
+INSTRUCTION:
+Use your tools to read and analyze the document at the location above. 
+
+### DATA INTEGRITY RULE (CRITICAL) ###
+Since the document is passed via a Base64 string, you must treat the string as **IMMUTABLE BINARY DATA**.
+1. **NO TRUNCATION**: You must pass the *entire* Base64 string to the MCP tool.
+2. **NO FORMATTING**: Do not add quotes, whitespace, or markdown blocks around the string when passing it.
+3. **NO SUMMARIZATION**: Do not try to "shorten" the string.
+Failure to pass the EXACT string will result in "Incorrect padding" errors and failure of the audit.
+
+The `meanerbeaver/pdf-parse` MCP server provides several tools. Follow this ORCHESTRATION plan:
+1. **Get Bytes**: First, call `read_file_as_base64` with the provided file path. This returns a base64 string.
+2. **Call MCP Tool**: Use that base64 string to call one of the tools below. YOU MUST pass the string to the **`url_or_bytes`** argument:
+   - `pdf_to_text`: Recommended for general reading.
+   - `extract_sections`: Best for structured filings to see headers/hierarchy.
+   - `extract_tables`: Use if you need to audit numerical data in tables.
+3. **Analyze**: Base your analysis on the tool's output.
+4. **Fallback**: Only if the tools fail or return an error, use the pre-extracted text provided below.
+
 COMPLIANCE RULES TO CHECK AGAINST:
 {rules}
 
-DOCUMENT CONTENT (with page numbers):
+PRE-EXTRACTED CONTENT (FALLBACK):
 {pages_text}
 
 TASK:
@@ -217,23 +261,43 @@ Provide your analysis as structured JSON with the following format:
   ]
 }}
 
-Identify 2-4 gaps that are genuinely present based on the document content."""
+Identify 2-4 gaps that are genuinely present based on the document content.
+
+Finally, in the 'raw_observations' field, please state explicitly whether you successfully used the 'pdf_to_text' tool via the base64 bridge or used the fallback text."""
 
     # Check if Dedalus is configured
     if not os.getenv("DEDALUS_API_KEY"):
-        # Return mock analysis if no API key
-        return _mock_analysis(document_type)
+        return _mock_analysis(document_type, "DEDALUS_API_KEY not set")
     
     try:
         client = AsyncDedalus()
         runner = DedalusRunner(client)
         
+        print(f"[Agent 2] >>> SUCCESS: Starting PDF analysis orchestration...")
+        
+        # Determine available MCP servers
+        # We assume meanerbeaver/pdf-parse is available in the environment context
+        # If it's not explicitly in mcp_servers list, the runner might not load it
+        # But per user request, we adding it.
+        
         result = await runner.run(
             input=prompt,
             model="openai/gpt-4o",
             response_format=AnalysisResult,
-            max_steps=3
+            max_steps=5,
+            tools=[read_file_as_base64],
+            mcp_servers=["meanerbeaver/pdf-parse"]
         )
+        
+        print(f"[Agent 2] >>> SUCCESS: Analysis completed using Dedalus")
+        
+        # DEBUG: Log execution steps if needed
+        if hasattr(result, 'steps'):
+            print(f"[Dedalus] Execution Steps ({len(result.steps)}):")
+            for i, step in enumerate(result.steps):
+                print(f"--- Step {i+1} ---")
+                print(f"Action: {step.action if hasattr(step, 'action') else 'Unknown'}")
+                print(f"Observation: {step.observation if hasattr(step, 'observation') else 'Unknown'}")
         
         # Parse the response
         if hasattr(result, 'final_output') and result.final_output:
@@ -256,12 +320,14 @@ Identify 2-4 gaps that are genuinely present based on the document content."""
         return _mock_analysis(document_type)
         
     except Exception as e:
-        print(f"Dedalus analysis failed: {e}")
-        return _mock_analysis(document_type)
+        print(f"[Agent 2] >>> ERROR: Dedalus analysis failed: {e}")
+        return _mock_analysis(document_type, f"Dedalus error: {str(e)}")
 
 
-def _mock_analysis(document_type: str) -> AnalysisResult:
-    """Return mock analysis when Dedalus is not available."""
+def _mock_analysis(document_type: str, reason: str = "Dedalus service unavailable") -> AnalysisResult:
+    """Return mock analysis when Dedalus is not available or fails."""
+    
+    obs = f"NOTICE: Using fallback mock data. Reason: {reason}"
     
     if document_type == "SOX 404":
         return AnalysisResult(
@@ -287,7 +353,8 @@ def _mock_analysis(document_type: str) -> AnalysisResult:
                     regulation="SOX Section 404 — COSO CC6.1",
                     locations=[GapLocation(page=1, quote="Access review frequency not specified", context="General")]
                 )
-            ]
+            ],
+            raw_observations=obs
         )
     elif document_type in ["10-K", "8-K"]:
         return AnalysisResult(
@@ -313,7 +380,8 @@ def _mock_analysis(document_type: str) -> AnalysisResult:
                     regulation="SEC Regulation S-K Item 402",
                     locations=[GapLocation(page=1, quote="Compensation metrics unclear", context="Executive Compensation")]
                 )
-            ]
+            ],
+            raw_observations=obs
         )
     else:
         return AnalysisResult(
@@ -332,5 +400,6 @@ def _mock_analysis(document_type: str) -> AnalysisResult:
                     regulation="Internal control standards",
                     locations=[GapLocation(page=1, quote="No approval signatures found", context="General")]
                 )
-            ]
+            ],
+            raw_observations=obs
         )

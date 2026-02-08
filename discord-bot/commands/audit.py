@@ -31,6 +31,7 @@ async def setup(bot: discord.ext.commands.Bot):
         document_type=[
             app_commands.Choice(name="SOX 404", value="SOX 404"),
             app_commands.Choice(name="10-K", value="10-K"),
+            app_commands.Choice(name="8-K", value="8-K"),
             app_commands.Choice(name="Invoice", value="Invoice"),
         ]
     )
