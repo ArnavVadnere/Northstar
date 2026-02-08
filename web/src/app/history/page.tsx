@@ -1,19 +1,11 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { getAuditHistory } from "@/lib/api";
 import { format } from "date-fns";
 
 function GradeBadge({ score, grade }: { score: number; grade: string }) {
-  const color = score >= 80 ? "bg-green-600" : score >= 60 ? "bg-yellow-600" : "bg-red-600";
-  return <Badge className={color}>{grade} ({score})</Badge>;
+  const color = score >= 80 ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : score >= 60 ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" : "bg-red-500/15 text-red-400 border-red-500/30";
+  return <Badge variant="outline" className={`${color} font-mono text-xs`}>{grade} {score}</Badge>;
 }
 
 export default async function HistoryPage() {
@@ -25,56 +17,38 @@ export default async function HistoryPage() {
   }
 
   return (
-    <div className="container mx-auto px-6 py-10 space-y-6">
+    <div className="container mx-auto px-6 py-10 space-y-6 max-w-3xl">
       <div>
-        <h1 className="text-3xl font-bold">Audit History</h1>
-        <p className="text-muted-foreground mt-1">
-          View all past compliance audits.
+        <h1 className="text-2xl font-bold">Audit History</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          All past compliance audits.
         </p>
       </div>
 
       {audits.length === 0 ? (
-        <div className="rounded-md border p-10 text-center">
-          <p className="text-muted-foreground">No audits found. Upload a document to get started.</p>
+        <div className="rounded-xl border border-dashed border-border/50 p-10 text-center">
+          <p className="text-sm text-muted-foreground">No audits found. Upload a document to get started.</p>
         </div>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Document</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-center">Score</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {audits.map((audit) => (
-                <TableRow key={audit.audit_id} className="cursor-pointer hover:bg-muted/50">
-                  <TableCell>
-                    <Link href={`/results/${audit.audit_id}`} className="block">
-                      {format(new Date(audit.timestamp), "MMM d, yyyy")}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/results/${audit.audit_id}`} className="block font-medium">
-                      {audit.document_name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/results/${audit.audit_id}`} className="block">
-                      <Badge variant="outline">{audit.document_type}</Badge>
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Link href={`/results/${audit.audit_id}`} className="block">
-                      <GradeBadge score={audit.score} grade={audit.grade} />
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="space-y-2">
+          {audits.map((audit) => (
+            <Link key={audit.audit_id} href={`/results/${audit.audit_id}`}>
+              <div className="flex items-center justify-between gap-4 p-4 rounded-xl border border-border/50 bg-card/30 hover:bg-card/60 transition-colors cursor-pointer group">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <span className="text-primary text-[10px] font-mono">{audit.document_type.slice(0, 3).toUpperCase()}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{audit.document_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(audit.timestamp), "MMM d, yyyy 'at' h:mm a")}
+                    </p>
+                  </div>
+                </div>
+                <GradeBadge score={audit.score} grade={audit.grade} />
+              </div>
+            </Link>
+          ))}
         </div>
       )}
     </div>
