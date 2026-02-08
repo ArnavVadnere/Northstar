@@ -1,19 +1,28 @@
-export interface Finding {
-  id: string;
-  severity: "critical" | "high" | "medium" | "low";
+export interface ComplianceGap {
+  severity: "critical" | "high" | "medium";
+  title: string;
+  description: string;
   regulation: string;
-  issue: string;
-  remediation: string;
 }
 
 export interface AuditResult {
   audit_id: string;
-  timestamp: string;
-  company_name: string;
+  score: number;
+  grade: string;
   document_name: string;
-  compliance_score: number;
-  status: "completed" | "processing" | "failed";
+  document_type: string;
+  timestamp: string;
+  gaps: ComplianceGap[];
+  remediation: string[];
   executive_summary: string;
-  findings: Finding[];
-  regulations_checked: string[];
+  report_pdf_url: string;
+}
+
+export interface AuditHistoryItem {
+  audit_id: string;
+  document_name: string;
+  document_type: string;
+  score: number;
+  grade: string;
+  timestamp: string;
 }

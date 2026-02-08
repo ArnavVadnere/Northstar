@@ -1,4 +1,7 @@
-import { notFound } from "next/navigation";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -12,15 +15,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getAuditResult } from "@/lib/api";
+import { getAuditResult, getReportPdfUrl } from "@/lib/api";
+import { getCachedAudit } from "@/lib/audit-cache";
 import { format } from "date-fns";
-import type { Finding } from "@/lib/types";
+import type { AuditResult, ComplianceGap } from "@/lib/types";
 
-const severityColor: Record<Finding["severity"], string> = {
+const severityColor: Record<ComplianceGap["severity"], string> = {
   critical: "bg-red-600",
   high: "bg-orange-500",
   medium: "bg-yellow-500",
-  low: "bg-blue-500",
 };
 
 function scoreColor(score: number) {
@@ -35,44 +38,81 @@ function progressColor(score: number) {
   return "[&>div]:bg-red-600";
 }
 
-export default async function ResultsPage({
-  params,
-}: {
-  params: Promise<{ audit_id: string }>;
-}) {
-  const { audit_id } = await params;
+function gradeColor(score: number) {
+  if (score >= 80) return "bg-green-600";
+  if (score >= 60) return "bg-yellow-600";
+  return "bg-red-600";
+}
 
-  let audit;
-  try {
-    audit = await getAuditResult(audit_id);
-  } catch {
-    return notFound();
+export default function ResultsPage() {
+  const params = useParams();
+  const auditId = params.audit_id as string;
+
+  const [audit, setAudit] = useState<AuditResult | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      // Check client-side cache first (from POST /api/run-audit response)
+      const cached = getCachedAudit(auditId);
+      if (cached) {
+        setAudit(cached);
+        setLoading(false);
+        return;
+      }
+
+      // Fall back to GET /api/audit/{id}
+      try {
+        const result = await getAuditResult(auditId);
+        setAudit(result);
+      } catch {
+        setError("Audit not found.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [auditId]);
+
+  if (loading) {
+    return (
+      <div className="container mx-auto px-6 py-20 text-center">
+        <p className="text-muted-foreground">Loading audit results...</p>
+      </div>
+    );
   }
 
-  const criticalCount = audit.findings.filter((f) => f.severity === "critical").length;
-  const highCount = audit.findings.filter((f) => f.severity === "high").length;
+  if (error || !audit) {
+    return (
+      <div className="container mx-auto px-6 py-20 text-center space-y-4">
+        <h2 className="text-2xl font-bold">Audit Not Found</h2>
+        <p className="text-muted-foreground">{error || "This audit does not exist."}</p>
+      </div>
+    );
+  }
+
+  const criticalCount = audit.gaps.filter((g) => g.severity === "critical").length;
+  const highCount = audit.gaps.filter((g) => g.severity === "high").length;
 
   return (
     <div className="container mx-auto px-6 py-10 space-y-8 max-w-4xl">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">{audit.company_name}</h1>
+          <h1 className="text-3xl font-bold">{audit.document_name}</h1>
           <p className="text-muted-foreground mt-1">
-            {audit.document_name} &middot;{" "}
+            {audit.document_type} &middot;{" "}
             {format(new Date(audit.timestamp), "MMM d, yyyy 'at' h:mm a")}
           </p>
-          <div className="flex gap-2 mt-2">
-            {audit.regulations_checked.map((r) => (
-              <Badge key={r} variant="outline">
-                {r}
-              </Badge>
-            ))}
-          </div>
         </div>
-        <Button variant="outline" disabled>
-          Export PDF
-        </Button>
+        <a
+          href={getReportPdfUrl(audit.report_pdf_url)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Button variant="outline">Download PDF Report</Button>
+        </a>
       </div>
 
       <Separator />
@@ -84,14 +124,17 @@ export default async function ResultsPage({
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-end gap-3">
-            <span className={`text-5xl font-bold ${scoreColor(audit.compliance_score)}`}>
-              {audit.compliance_score}
+            <span className={`text-5xl font-bold ${scoreColor(audit.score)}`}>
+              {audit.score}
             </span>
             <span className="text-muted-foreground text-lg mb-1">/ 100</span>
+            <Badge className={`ml-2 text-lg px-3 py-1 ${gradeColor(audit.score)} text-white`}>
+              {audit.grade}
+            </Badge>
           </div>
           <Progress
-            value={audit.compliance_score}
-            className={`h-3 ${progressColor(audit.compliance_score)}`}
+            value={audit.score}
+            className={`h-3 ${progressColor(audit.score)}`}
           />
           <div className="flex gap-4 text-sm text-muted-foreground">
             {criticalCount > 0 && (
@@ -104,7 +147,7 @@ export default async function ResultsPage({
                 {highCount} high
               </span>
             )}
-            <span>{audit.findings.length} total findings</span>
+            <span>{audit.gaps.length} total gaps</span>
           </div>
         </CardContent>
       </Card>
@@ -119,33 +162,35 @@ export default async function ResultsPage({
         </CardContent>
       </Card>
 
-      {/* Findings Table */}
+      {/* Compliance Gaps Table */}
       <div className="space-y-3">
-        <h2 className="text-xl font-semibold">Findings</h2>
+        <h2 className="text-xl font-semibold">Compliance Gaps</h2>
         <div className="rounded-md border overflow-x-auto">
           <Table className="min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[100px]">Severity</TableHead>
-                <TableHead className="w-[160px]">Regulation</TableHead>
-                <TableHead>Issue</TableHead>
-                <TableHead>Remediation</TableHead>
+                <TableHead className="w-[200px]">Gap</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="w-[200px]">Regulation</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {audit.findings.map((finding) => (
-                <TableRow key={finding.id}>
+              {audit.gaps.map((gap, i) => (
+                <TableRow key={i}>
                   <TableCell>
-                    <Badge className={`${severityColor[finding.severity]} text-white capitalize`}>
-                      {finding.severity}
+                    <Badge className={`${severityColor[gap.severity]} text-white capitalize`}>
+                      {gap.severity}
                     </Badge>
                   </TableCell>
                   <TableCell className="font-medium text-sm">
-                    {finding.regulation}
+                    {gap.title}
                   </TableCell>
-                  <TableCell className="text-sm">{finding.issue}</TableCell>
+                  <TableCell className="text-sm">
+                    {gap.description}
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {finding.remediation}
+                    {gap.regulation}
                   </TableCell>
                 </TableRow>
               ))}
@@ -153,6 +198,20 @@ export default async function ResultsPage({
           </Table>
         </div>
       </div>
+
+      {/* Remediation Steps */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Remediation Steps</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ol className="list-decimal list-inside space-y-2 text-sm">
+            {audit.remediation.map((step, i) => (
+              <li key={i} className="leading-relaxed">{step}</li>
+            ))}
+          </ol>
+        </CardContent>
+      </Card>
     </div>
   );
 }

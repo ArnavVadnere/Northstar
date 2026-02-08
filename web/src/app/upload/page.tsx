@@ -4,7 +4,6 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -13,14 +12,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { runAudit } from "@/lib/api";
+import { cacheAudit } from "@/lib/audit-cache";
 
-const REGULATIONS = ["SOX", "GDPR", "PCI-DSS", "HIPAA", "Basel III"] as const;
+const DOCUMENT_TYPES = ["SOX 404", "10-K", "8-K", "Invoice"] as const;
 
 export default function UploadPage() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
-  const [companyName, setCompanyName] = useState("");
-  const [regulation, setRegulation] = useState("");
+  const [documentType, setDocumentType] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -48,21 +47,22 @@ export default function UploadPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !companyName || !regulation) return;
+    if (!file || !documentType) return;
 
     setSubmitting(true);
     setError("");
 
     try {
-      const { audit_id } = await runAudit(file, companyName, regulation);
-      router.push(`/results/${audit_id}`);
+      const result = await runAudit(file, documentType, "web-user");
+      cacheAudit(result);
+      router.push(`/results/${result.audit_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Audit submission failed. Please try again.");
       setSubmitting(false);
     }
   };
 
-  const isValid = file && companyName.trim() && regulation;
+  const isValid = file && documentType;
 
   return (
     <div className="container mx-auto px-6 py-10 max-w-2xl">
@@ -126,30 +126,17 @@ export default function UploadPage() {
           </CardContent>
         </Card>
 
-        {/* Company Name */}
+        {/* Document Type Selector */}
         <div className="space-y-2">
-          <label htmlFor="company" className="text-sm font-medium">
-            Company Name
-          </label>
-          <Input
-            id="company"
-            placeholder="e.g. Acme Financial Corp"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-          />
-        </div>
-
-        {/* Regulation Selector */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Regulation</label>
-          <Select value={regulation} onValueChange={setRegulation}>
+          <label className="text-sm font-medium">Document Type</label>
+          <Select value={documentType} onValueChange={setDocumentType}>
             <SelectTrigger>
-              <SelectValue placeholder="Select a regulation to check against" />
+              <SelectValue placeholder="Select document type" />
             </SelectTrigger>
             <SelectContent>
-              {REGULATIONS.map((reg) => (
-                <SelectItem key={reg} value={reg}>
-                  {reg}
+              {DOCUMENT_TYPES.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {type}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -165,7 +152,7 @@ export default function UploadPage() {
 
         {/* Submit */}
         <Button type="submit" className="w-full" size="lg" disabled={!isValid || submitting}>
-          {submitting ? "Analyzing..." : "Run Compliance Audit"}
+          {submitting ? "Analyzing... (may take up to 90 seconds)" : "Run Compliance Audit"}
         </Button>
       </form>
     </div>
