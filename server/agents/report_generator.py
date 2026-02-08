@@ -30,10 +30,15 @@ class ReportOutput(BaseModel):
 # --- Score and grade calculation ---
 
 def _calculate_score(gaps: List[dict]) -> int:
-    """Calculate compliance score based on gap severity."""
-    severity_weights = {"critical": 25, "high": 15, "medium": 8}
+    """Calculate compliance score based on gap severity.
+
+    Weights are calibrated so that real SEC-accepted filings with minor
+    gaps still score in the B/C range, while documents with genuine
+    material deficiencies score D/F.
+    """
+    severity_weights = {"critical": 15, "high": 8, "medium": 3}
     total_penalty = sum(
-        severity_weights.get(g.get("severity", "medium"), 8) for g in gaps
+        severity_weights.get(g.get("severity", "medium"), 3) for g in gaps
     )
     return max(0, 100 - total_penalty)
 

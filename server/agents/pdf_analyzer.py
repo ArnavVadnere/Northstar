@@ -256,13 +256,20 @@ Then, analyze this document against the compliance rules. For each compliance ga
 Focus on finding real gaps based on what's actually in (or missing from) the document.
 If the document is very short or lacks substantive content, note that as a gap itself.
 
-Identify all genuine compliance gaps you find. Assign each gap a severity:
-- "critical": Immediate regulatory risk or material deficiency
-- "high": Significant gap requiring prompt remediation
-- "medium": Notable issue that should be addressed
+IMPORTANT SCORING CALIBRATION:
+Many documents you review will be real SEC-accepted filings. Keep this in mind:
+- A document that was accepted by the SEC is likely substantially compliant.
+- Only flag "critical" for issues that would genuinely trigger SEC enforcement action or restatement (e.g., missing required financial statements, materially misleading disclosures).
+- Do NOT mark something "critical" just because it could be improved or because best-practice guidance recommends it.
+- Most gaps in real filings are "medium" (best-practice improvements) or "high" (notable omissions that don't rise to enforcement risk).
+
+Assign each gap a severity:
+- "critical": Would likely trigger SEC enforcement, restatement, or material investor harm. Reserve this for genuine material deficiencies only.
+- "high": Significant regulatory gap that should be remediated but would not alone trigger enforcement.
+- "medium": Best-practice improvement or minor omission.
 
 Only report gaps that are genuinely present — do not invent gaps to fill a quota.
-If the document is largely compliant, it is acceptable to return fewer gaps.
+If the document is largely compliant, it is acceptable to return fewer gaps or mostly medium-severity gaps.
 Return between 1 and 5 gaps.
 
 Provide your analysis as structured JSON with the following format:
