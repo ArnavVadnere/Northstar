@@ -17,7 +17,7 @@ function GradeBadge({ score, grade }: { score: number; grade: string }) {
 }
 
 export default async function HistoryPage() {
-  let audits;
+  let audits: Awaited<ReturnType<typeof getAuditHistory>> = [];
   try {
     audits = await getAuditHistory();
   } catch {
