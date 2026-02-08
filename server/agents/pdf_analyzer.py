@@ -189,23 +189,26 @@ async def analyze_pdf(
     pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8") if pdf_bytes else None
 
     # Build the MCP tool instruction block
-    mcp_instructions = """
+    mcp_instructions = f"""
 IMPORTANT — MCP TOOL USAGE:
-You have access to MCP tools from the pdf-parse server. Before performing your analysis,
-you MUST call these tools to extract structured data from the document:
+You have access to MCP tools from the legal-doc-mcp server. Before performing your analysis,
+you MUST call these tools to extract structured compliance data from the document:
 
-1. Call `mcp-extract_sections` with parameter `text` set to the DOCUMENT TEXT below.
-   This will return the section/heading structure of the document.
+1. Call `find_regulatory_sections` to find required compliance sections in this {document_type} document.
+2. Call `extract_financial_statements` to extract and identify financial statements (Balance Sheet, Income Statement, etc.).
+3. Call `validate_financial_math` to validate mathematical accuracy (balance sheet equation, invoice totals, table sums).
+4. Call `check_required_signatures` to check for required signatures based on document type and amount thresholds.
+5. Call `detect_compliance_red_flags` to search for compliance warning phrases (going concern, material weakness, etc.).
+6. Call `extract_comparative_periods` to extract multi-period financial data and calculate period-over-period changes.
+
+Call as many of these tools as are relevant to the {document_type} document type.
+Use the outputs from these tool calls to inform your compliance gap analysis.
+If a tool call fails or returns empty results, proceed with the raw text provided.
 """
     if pdf_b64:
         mcp_instructions += f"""
-2. Call `mcp-extract_tables` with parameter `url_or_bytes` set to the following base64-encoded PDF:
+The PDF content is provided as base64-encoded bytes below. Pass this to any MCP tools that require PDF input:
 {pdf_b64}
-   This will extract any tables from the PDF.
-"""
-    mcp_instructions += """
-Use the outputs from these tool calls to inform your compliance gap analysis.
-If a tool call fails or returns empty results, proceed with the raw text provided.
 """
 
     # Create the analysis prompt
@@ -220,7 +223,8 @@ COMPLIANCE RULES TO CHECK AGAINST:
 {rules}
 
 TASK:
-First, call the MCP tools described above to get structured sections and tables.
+First, call the MCP tools described above to extract regulatory sections, financial statements,
+validate math, check signatures, detect red flags, and extract comparative periods.
 Then, analyze this document against the compliance rules. For each compliance gap you find:
 1. Identify the severity (critical, high, or medium)
 2. Give it a clear, specific title
@@ -264,8 +268,8 @@ Provide your analysis as structured JSON with the following format:
         result = await runner.run(
             input=prompt,
             model="openai/gpt-4o",
-            max_steps=5,
-            mcp_servers=["meanerbeaver/pdf-parse"],
+            max_steps=10,
+            mcp_servers=["sdas04/legal-doc-mcp"],
         )
 
         print(f"[Agent 2] >>> SUCCESS: Analysis completed using Dedalus")
